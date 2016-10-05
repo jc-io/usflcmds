@@ -1,0 +1,32 @@
+http://unix.stackexchange.com/questions/175380/how-to-list-all-running-daemons/314388#314388
+The notion of daemon is attached to processes, not files. For this reason, there is no sense in "finding daemons on the filesystem". Just to make the notion a little clearer : a program is an executable file (visible in the output of ls) ; a process is an instance of that program (visible in the output of ps).
+
+Now, if we use the information I can gave in my answer, we could find running daemons by searching for processes which run without a controlling terminal attached to them. This can be done quite easily with ps:
+
+$ ps -eo 'tty,pid,comm' | grep ^?
+The tty output field contains "?" when the process has no controlling terminal.
+
+The big problem here comes when your system runs a graphical environment. Since GUI programs (i.e. Chromium) are not attached to a terminal, they also appear in the output. On a standard system, where root does not run graphical programs, you could simply restrict the previous list to root's processes. This can be achieved using ps' -U switch.
+
+$ ps -U0 -o 'tty,pid,comm' | grep ^?
+Yet, two problems arise here:
+
+If root is running graphical programs, they will show up.
+Daemons running without root privileges won't. Note that daemons which start at boot time are usually running as root.
+Basically, we would like to display all programs without a controlling terminal, but not GUI programs. Luckily for us, there is a program to list GUI processes : xlsclients! This answer from slm tells us how to use it to list all GUI programs, but we'll have to reverse it, since we want to exclude them. This can be done using the --deselect switch.
+
+First, we'll build a list of all GUI programs for which we have running processes. From the answer I just linked, this is done using...
+
+$ xlsclients | cut -d' ' -f3 | paste - -s -d ','
+Now, ps has a -C switch which allows us to select by command name. We just got our command list, so let's inject it into the ps command line. Note that I'm using --deselect afterwards to reverse my selection.
+
+$ ps -C "$(xlsclients | cut -d' ' -f3 | paste - -s -d ',')" --deselect
+Now, we have a list of all non-GUI processes. Let's not forget our "no TTY attached" rule. For this, I'll add -o tty,args to the previous line in order to output the tty of each process (and its full command line) :
+
+$ ps -C "$(xlsclients | cut -d' ' -f3 | paste - -s -d ',')" --deselect -o tty,args | grep ^?
+The final grep captures all lines which begin with "?", that is, all processes without a controlling tty. And there you go! This final line gives you all non-GUI processes running without a controlling terminal. Note that you could still improve it, for instance, by excluding kernel threads (which aren't processes)...
+
+$ ps -C "$(xlsclients | cut -d' ' -f3 | paste - -s -d ',')" --ppid 2 --pid 2 --deselect -o tty,args | grep ^?
+... or by adding a few columns of information for you to read:
+
+$ ps -C "$(xlsclients | cut -d' ' -f3 | paste - -s -d ',')" --ppid 2 --pid 2 --deselect -o tty,uid,pid,ppid,args | grep ^?
